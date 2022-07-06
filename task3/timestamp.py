@@ -1,3 +1,6 @@
+from typing import Dict, List
+
+
 class Interval:
     def __init__(self, t1, t2) -> None:
         self.start = t1
@@ -6,7 +9,14 @@ class Interval:
     def intersect(self, other) -> bool:
         if (
             ((self.finish > other.start) and (other.start >= self.start))
-            or ((other.finish > self.start) and ((other.finish <= self.finish) or (other.finish > self.finish) and self.finish > other.start))
+            or (
+                (other.finish > self.start)
+                and (
+                    (other.finish <= self.finish)
+                    or (other.finish > self.finish)
+                    and self.finish > other.start
+                )
+            )
             or ((self.start == other.start) and (self.finish == other.finish))
         ):
             return True
@@ -26,47 +36,117 @@ class Interval:
             # other "слева", self "справа"
             elif (self.start > other.start) and (self.start < other.finish):
                 return other.finish - self.start
-    
+
     def __str__(self) -> str:
         return f"Interval {self.start} - {self.finish}"
 
 
-def appearance(intervals):
-    lesson = Interval(intervals['lesson'][0], intervals['lesson'][1]) 
-    print("lesson ", lesson)
+def normalize(intervals: List[int]) -> List[int]:
+    """Соединяет пересекающиеся отрезки"""
+
+    intervals_copy = intervals.copy()
+
+    for outer_interval_index in range(0, len(intervals_copy) - 1, 2):
+        outer_interval = Interval(
+            intervals_copy[outer_interval_index],
+            intervals_copy[outer_interval_index + 1],
+        )
+
+        for inner_interval_index in range(0, len(intervals_copy) - 1, 2):
+            inner_interval = Interval(
+                intervals[inner_interval_index], intervals[inner_interval_index + 1]
+            )
+
+            # Проверяем, что внутренний и внешний интервалы - не одинаковые и пересекаются
+            # Если условия выполняются - удаляем входы и выходы обоих интервалов и вносим в список объединенный интервал.
+            if (
+                outer_interval_index != inner_interval_index
+            ) and outer_interval.intersect(inner_interval):
+
+                # Определяем индексы элементов интервалов, подлежащих объединению
+                remove_indexes = [
+                    outer_interval_index,
+                    outer_interval_index + 1,
+                    inner_interval_index,
+                    inner_interval_index + 1,
+                ]
+                jnt_interval_start = min(
+                    outer_interval.start, inner_interval.start
+                )  # Объединенный интервал имеет минимальное время старта
+                jnt_interval_finish = max(
+                    outer_interval.finish, inner_interval.finish
+                )  # и максимальное время финиша
+
+                # Через включение списков собираем новый список интервалов, не включая в него элементы объединенных интервалов
+                # и добавляя один объединенный интервал
+                return normalize(
+                    [
+                        i
+                        for j, i in enumerate(intervals_copy)
+                        if j not in remove_indexes
+                    ]  # не включаем элементы объединенных интервалов
+                    + [jnt_interval_start]  # включаем старт объединенного интервала
+                    + [jnt_interval_finish]  # включаем финиш объединенного интервала
+                )
+
+    return sorted(intervals_copy)  # Сортировать не обязательно
+
+
+def sort_intervals(intervals: List[int]) -> List[int]:
+    """Сортирует входы и выходы участника урока, располагая в правильном временном порядке."""
+    sorted_intervals = []
+    intervals_entries = [i for index, i in enumerate(intervals) if index % 2 == 0]
+    intervals_exits = [i for index, i in enumerate(intervals) if index % 2 != 0]
+    for i in range(len(intervals_entries)):
+        sorted_intervals.append(sorted(intervals_entries)[i])
+        sorted_intervals.append(sorted(intervals_exits)[i])
+
+    return sorted_intervals
+
+
+def correct_interval_for_lesson(interval: Interval, lesson: Interval):
+    """Двигает начало/конец интервала, если тот за пределами рамок урока.
+    Повторялось в коде, решил вынести в отдельную функцию.
+    """
+    if interval.start < lesson.start:
+        interval.start = lesson.start
+    if interval.finish > lesson.finish:
+        interval.finish = lesson.finish
+
+
+def appearance(intervals: Dict[str, List[int]]) -> int:
+    """Основная функция скрипта"""
+    lesson = Interval(intervals["lesson"][0], intervals["lesson"][1])
+
     time = 0
 
-    # Внешним циклом пройдем по отрезкам ученика
-    for i in intervals['pupil'][::2]:
-        pupil = Interval(i, intervals['pupil'][intervals['pupil'].index(i)+1])
-        print("Pupil ", pupil)
+    # Приводим в порядок оба списка интервалов. Объединяем пересекающиеся и сортируем интервалы.
+    pupils = normalize(sort_intervals(intervals["pupil"]))
+    tutors = normalize(sort_intervals(intervals["tutor"]))
+
+    # Внешним циклом пройдем по интервалам ученика
+    for i in pupils[::2]:
+        pupil = Interval(i, pupils[pupils.index(i) + 1])
 
         # Интервалы за пределами урока не считаем
-
         if pupil.intersect(lesson):
-            print("YES")
+
             # Если ученик зашел раньше, начался урок, или вышел позже, чем урок окончился, меняем ему время.
-            if pupil.start < lesson.start:
-                pupil.start = lesson.start
-            if pupil.finish > lesson.finish:
-                pupil.finish = lesson.finish
+            correct_interval_for_lesson(pupil, lesson)
 
             # Внутренним циклом - по отрезкам учителя
-            for j in intervals['tutor'][::2]:
-                tutor = Interval(j, intervals['tutor'][intervals['tutor'].index(j)+1])
-                print("Tutor ", tutor)
-                if tutor.start < lesson.start:
-                    tutor.start = lesson.start
-                if tutor.finish > lesson.finish:
-                    tutor.finish = lesson.finish
-                
-                # Считаем время, если интервалы пересекаются
-                if pupil.intersect(tutor):
-                    print(pupil, tutor, " работаем")
-                    time += pupil.calculate_intersection(tutor)
-    print("TIME: ", time)
+            for j in tutors[::2]:
+                tutor = Interval(j, tutors[tutors.index(j) + 1])
+                if tutor.intersect(lesson):
+
+                    correct_interval_for_lesson(tutor, lesson)
+
+                    # Считаем время, если интервалы пересекаются
+                    if pupil.intersect(tutor):
+
+                        time += pupil.calculate_intersection(tutor)
+
     return time
-        
 
 
 tests = [
@@ -77,7 +157,6 @@ tests = [
                 1594663340,
                 1594663389,
                 1594663390,
-                
                 1594663395,
                 1594663396,
                 1594666472,
