@@ -2,7 +2,7 @@ from typing import Dict, List
 
 
 class Interval:
-    def __init__(self, t1, t2) -> None:
+    def __init__(self, t1: int, t2: int) -> None:
         self.start = t1
         self.finish = t2
 
